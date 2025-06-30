@@ -1,10 +1,10 @@
-import { useState, useEffect, ChangeEvent, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import Editor from "@monaco-editor/react";
-import { FiChevronDown, FiChevronRight, FiCopy, FiPlay, FiSquare, FiCheck } from "react-icons/fi";
+import RepositoryForm from "./components/RepositoryForm";
+import BuildSection from "./components/BuildSection";
+import TestSection from "./components/TestSection";
 import "./App.css";
-
 
 interface ValidationResult {
   success: boolean;
@@ -39,6 +39,7 @@ function App() {
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const testLogsContainerRef = useRef<HTMLDivElement>(null);
   const buildLogsSectionRef = useRef<HTMLDivElement>(null);
+  const testLogsSectionRef = useRef<HTMLDivElement>(null);
 
   // Validate JSON syntax
   const validateJsonSyntax = (jsonString: string): boolean => {
@@ -215,6 +216,19 @@ function App() {
     }
   }, [isBuilding]);
 
+  // Scroll test logs section into view when test starts
+  useEffect(() => {
+    if (isTesting && testLogsSectionRef.current) {
+      // Small delay to ensure the section is rendered
+      setTimeout(() => {
+        testLogsSectionRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'start' 
+        });
+      }, 100);
+    }
+  }, [isTesting]);
+
   // Handle scroll events to detect manual scrolling
   const handleScroll = () => {
     if (logsContainerRef.current) {
@@ -244,7 +258,7 @@ function App() {
       unlisten.then(f => f());
       unlistenBuildComplete.then(f => f());
     };
-  }, []);
+  }, [imageName]);
 
   // Listen for test logs
   useEffect(() => {
@@ -351,70 +365,6 @@ function App() {
     }
   };
 
-  const handleCopyDockerfile = async () => {
-    try {
-      await navigator.clipboard.writeText(generatedDockerfile);
-      // You could add a toast notification here if desired
-    } catch (err) {
-      console.error('Failed to copy dockerfile:', err);
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = generatedDockerfile;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-  };
-
-  const handleCopyJsonSpec = async () => {
-    try {
-      await navigator.clipboard.writeText(jsonSpec);
-      // You could add a toast notification here if desired
-    } catch (err) {
-      console.error('Failed to copy JSON spec:', err);
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = jsonSpec;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-  };
-
-  const handleCopyBuildLogs = async () => {
-    const logsText = buildLogs.join('\n');
-    try {
-      await navigator.clipboard.writeText(logsText);
-    } catch (err) {
-      console.error('Failed to copy build logs:', err);
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = logsText;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-  };
-
-  const handleCopyTestLogs = async () => {
-    const logsText = testLogs.join('\n');
-    try {
-      await navigator.clipboard.writeText(logsText);
-    } catch (err) {
-      console.error('Failed to copy test logs:', err);
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = logsText;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    }
-  };
-
   const checkImageExists = async (imageNameToCheck: string) => {
     if (!imageNameToCheck.trim() || !validateDockerImageName(imageNameToCheck)) {
       setIsImageExists(false);
@@ -442,374 +392,57 @@ function App() {
           SWEBench Debugger
         </h1>
 
-        {/* First Row: GitHub Repo URL */}
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[140px]">
-            GitHub Repo URL
-          </label>
-          <input
-            type="text"
-            value={githubRepoUrl}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setGithubRepoUrl(e.target.value)}
-            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-            placeholder="Enter GitHub repository URL..."
-          />
-        </div>
+        <RepositoryForm
+          githubRepoUrl={githubRepoUrl}
+          setGithubRepoUrl={setGithubRepoUrl}
+          baseCommit={baseCommit}
+          setBaseCommit={setBaseCommit}
+          headCommit={headCommit}
+          setHeadCommit={setHeadCommit}
+          jsonSpec={jsonSpec}
+          setJsonSpec={setJsonSpec}
+          isDockerfileExpanded={isDockerfileExpanded}
+          setIsDockerfileExpanded={setIsDockerfileExpanded}
+          generatedDockerfile={generatedDockerfile}
+          validationError={validationError}
+          isValidJson={isValidJson}
+          useHeadCommit={useHeadCommit}
+          setUseHeadCommit={setUseHeadCommit}
+        />
 
-        {/* Second Row: Base and Head Commit */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px]">
-              Base Commit
-            </label>
-            <input
-              type="text"
-              value={baseCommit}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setBaseCommit(e.target.value)}
-              className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              placeholder="Enter base commit hash..."
-            />
-          </div>
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px]">
-              Head Commit
-            </label>
-            <input
-              type="text"
-              value={headCommit}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setHeadCommit(e.target.value)}
-              className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-              placeholder="Enter head commit hash..."
-            />
-          </div>
-        </div>
+        <BuildSection
+          imageName={imageName}
+          setImageName={setImageName}
+          isBuilding={isBuilding}
+          buildLogs={buildLogs}
+          shouldAutoScroll={shouldAutoScroll}
+          setShouldAutoScroll={setShouldAutoScroll}
+          handleBuild={handleBuild}
+          handleStopBuild={handleStopBuild}
+          isValidImageName={isValidImageName}
+          generatedDockerfile={generatedDockerfile}
+          isValidJson={isValidJson}
+          validationError={validationError}
+          logsContainerRef={logsContainerRef}
+          buildLogsSectionRef={buildLogsSectionRef}
+          handleScroll={handleScroll}
+        />
 
-        {/* Third Row: JSON Spec */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              JSON Spec
-            </label>
-            {jsonSpec && (
-              <button
-                onClick={handleCopyJsonSpec}
-                className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                title="Copy JSON Spec"
-              >
-                <FiCopy size={16} />
-              </button>
-            )}
-          </div>
-          {/* Validation status indicator */}
-          {!isValidJson && (
-            <div className="mb-2 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded-md">
-              <p className="text-sm text-red-700 dark:text-red-300">Invalid JSON syntax</p>
-            </div>
-          )}
-          {validationError && isValidJson && (
-            <div className="mb-2 p-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-md">
-              <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">{validationError}</p>
-            </div>
-          )}
-          <div className={`border rounded-md overflow-hidden ${
-            !isValidJson 
-              ? 'border-red-500 dark:border-red-400' 
-              : validationError 
-                ? 'border-yellow-500 dark:border-yellow-400'
-                : 'border-gray-300 dark:border-gray-600'
-          }`}>
-            <Editor
-              height="250px"
-              defaultLanguage="json"
-              value={jsonSpec}
-              onChange={(value: string | undefined) => setJsonSpec(value || "")}
-              theme="vs-dark"
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                lineNumbers: "on",
-                scrollBeyondLastLine: false,
-                automaticLayout: true,
-                formatOnPaste: true,
-                formatOnType: true,
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Fourth Row: Expandable Dockerfile */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsDockerfileExpanded(!isDockerfileExpanded)}
-                className="flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-              >
-                {isDockerfileExpanded ? <FiChevronDown /> : <FiChevronRight />}
-                Generated Dockerfile
-              </button>
-              {generatedDockerfile && (
-                <button
-                  onClick={handleCopyDockerfile}
-                  className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                  title="Copy Dockerfile"
-                >
-                  <FiCopy size={16} />
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Use:</span>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="radio"
-                  name="commit"
-                  checked={!useHeadCommit}
-                  onChange={() => setUseHeadCommit(false)}
-                  className="text-blue-600"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Base Commit</span>
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="radio"
-                  name="commit"
-                  checked={useHeadCommit}
-                  onChange={() => setUseHeadCommit(true)}
-                  className="text-blue-600"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">Head Commit</span>
-              </label>
-            </div>
-          </div>
-          {isDockerfileExpanded && (
-            <div className="border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden">
-              <Editor
-                height="300px"
-                defaultLanguage="dockerfile"
-                value={generatedDockerfile}
-                theme="vs-dark"
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  lineNumbers: "on",
-                  scrollBeyondLastLine: false,
-                  automaticLayout: true,
-                  readOnly: true,
-                  wordWrap: "on",
-                  folding: false,
-                  renderLineHighlight: "none",
-                  contextmenu: false,
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Fifth Row: Image Name and Build */}
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px]">
-            Image Name
-          </label>
-          <div className="flex-1">
-            <input
-              type="text"
-              value={imageName}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setImageName(e.target.value)}
-              className={`w-full px-3 py-1.5 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white ${
-                imageName && !isValidImageName 
-                  ? 'border-red-500 dark:border-red-400' 
-                  : 'border-gray-300 dark:border-gray-600'
-              }`}
-              placeholder="Enter image name (e.g., myapp:latest)..."
-            />
-            {imageName && !isValidImageName && (
-              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                Invalid Docker image name. Use lowercase letters, numbers, hyphens, underscores, and periods.
-              </p>
-            )}
-          </div>
-          {!isBuilding ? (
-            <button
-              onClick={handleBuild}
-              disabled={!isValidImageName || !generatedDockerfile || isBuilding || !isValidJson || validationError !== null}
-              className={`px-6 py-2 font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center gap-2 ${
-                !isValidImageName || !generatedDockerfile || isBuilding || !isValidJson || validationError !== null
-                  ? 'bg-gray-400 cursor-not-allowed text-gray-700'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-              title={
-                !isValidJson ? 'JSON spec has syntax errors' :
-                validationError ? `Validation error: ${validationError}` :
-                !isValidImageName ? 'Invalid Docker image name' :
-                !generatedDockerfile ? 'No Dockerfile generated' :
-                'Build Docker image'
-              }
-            >
-              <FiPlay size={16} />
-              Build
-            </button>
-          ) : (
-            <button
-              onClick={handleStopBuild}
-              className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors flex items-center gap-2"
-            >
-              <FiSquare size={16} />
-              Stop
-            </button>
-          )}
-        </div>
-
-        {/* Build Logs Section */}
-        {(isBuilding || buildLogs.length > 0) && (
-          <div ref={buildLogsSectionRef}>
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                Build Logs
-              </h3>
-              {isBuilding && (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-              )}
-              {!isBuilding && buildLogs.length > 0 && (
-                <button
-                  onClick={handleCopyBuildLogs}
-                  className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                  title="Copy Build Logs"
-                >
-                  <FiCopy size={16} />
-                </button>
-              )}
-              {!shouldAutoScroll && buildLogs.length > 0 && (
-                <div className="flex items-center gap-1 text-sm text-yellow-600 dark:text-yellow-400">
-                  <span>Auto-scroll paused</span>
-                  <button
-                    onClick={() => {
-                      setShouldAutoScroll(true);
-                      if (logsContainerRef.current) {
-                        logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
-                      }
-                    }}
-                    className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900 rounded hover:bg-yellow-200 dark:hover:bg-yellow-800 transition-colors"
-                  >
-                    Scroll to bottom
-                  </button>
-                </div>
-              )}
-            </div>
-            <div 
-              ref={logsContainerRef}
-              onScroll={handleScroll}
-              className="bg-gray-900 dark:bg-gray-800 rounded-md p-4 h-96 max-h-96 overflow-y-auto"
-            >
-              {buildLogs.map((log, index) => (
-                <div key={index} className="text-sm font-mono text-green-400 whitespace-pre-wrap">
-                  {log}
-                </div>
-              ))}
-              {isBuilding && buildLogs.length === 0 && (
-                <div className="text-sm font-mono text-gray-400">
-                  Initializing build...
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Sixth Row: Test Files and Test */}
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px]">
-            Test Files
-          </label>
-          <input
-            type="text"
-            value={testFiles}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setTestFiles(e.target.value)}
-            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 dark:bg-gray-700 dark:text-white"
-            placeholder="Enter test file paths..."
-          />
-          {!isTesting ? (
-            <button
-              onClick={handleTest}
-              disabled={!isImageExists || isCheckingImage || isTesting}
-              className={`px-6 py-2 font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors flex items-center gap-2 ${
-                !isImageExists || isCheckingImage || isTesting
-                  ? 'bg-gray-400 cursor-not-allowed text-gray-700'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
-              title={!isImageExists ? 'Docker image does not exist' : 'Run tests'}
-            >
-              {isCheckingImage ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-              ) : (
-                <FiCheck size={16} />
-              )}
-              Test
-            </button>
-          ) : (
-            <button
-              onClick={handleStopTest}
-              className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors flex items-center gap-2"
-            >
-              <FiSquare size={16} />
-              Stop
-            </button>
-                     )}
-        </div>
-
-        {/* Test Logs Section */}
-        {(isTesting || testLogs.length > 0) && (
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                Test Logs
-              </h3>
-              {isTesting && (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
-              )}
-              {!isTesting && testLogs.length > 0 && (
-                <button
-                  onClick={handleCopyTestLogs}
-                  className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                  title="Copy Test Logs"
-                >
-                  <FiCopy size={16} />
-                </button>
-              )}
-              {!shouldAutoScrollTest && testLogs.length > 0 && (
-                <div className="flex items-center gap-1 text-sm text-yellow-600 dark:text-yellow-400">
-                  <span>Auto-scroll paused</span>
-                  <button
-                    onClick={() => {
-                      setShouldAutoScrollTest(true);
-                      if (testLogsContainerRef.current) {
-                        testLogsContainerRef.current.scrollTop = testLogsContainerRef.current.scrollHeight;
-                      }
-                    }}
-                    className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900 rounded hover:bg-yellow-200 dark:hover:bg-yellow-800 transition-colors"
-                  >
-                    Scroll to bottom
-                  </button>
-                </div>
-              )}
-            </div>
-            <div 
-              ref={testLogsContainerRef}
-              onScroll={handleTestScroll}
-              className="bg-gray-900 dark:bg-gray-800 rounded-md p-4 max-h-96 overflow-y-auto"
-            >
-              {testLogs.map((log, index) => (
-                <div key={index} className="text-sm font-mono text-green-400 whitespace-pre-wrap">
-                  {log}
-                </div>
-              ))}
-              {isTesting && testLogs.length === 0 && (
-                <div className="text-sm font-mono text-gray-400">
-                  Initializing test run...
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <TestSection
+          testFiles={testFiles}
+          setTestFiles={setTestFiles}
+          isTesting={isTesting}
+          testLogs={testLogs}
+          shouldAutoScrollTest={shouldAutoScrollTest}
+          setShouldAutoScrollTest={setShouldAutoScrollTest}
+          handleTest={handleTest}
+          handleStopTest={handleStopTest}
+          isImageExists={isImageExists}
+          isCheckingImage={isCheckingImage}
+          testLogsContainerRef={testLogsContainerRef}
+          testLogsSectionRef={testLogsSectionRef}
+          handleTestScroll={handleTestScroll}
+        />
       </div>
     </div>
   );
