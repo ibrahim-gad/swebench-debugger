@@ -15,7 +15,9 @@ pub fn run() {
             commands::stop_docker_build,
             commands::check_docker_image_exists,
             commands::run_docker_test,
-            commands::stop_docker_test
+            commands::stop_docker_test,
+            commands::save_docker_path,
+            commands::load_docker_path
         ])
         .on_window_event(|window, event| {
             match event {

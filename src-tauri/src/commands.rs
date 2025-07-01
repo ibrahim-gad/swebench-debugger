@@ -9,6 +9,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tempfile::NamedTempFile;
 use std::io::Write;
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DockerSpecs {
@@ -326,14 +328,31 @@ pub fn generate_docker_file(input_json: String, github_repo_url: String, commit:
 }
 
 // Check if Docker is installed and running
-async fn check_docker_available() -> Result<(), String> {
-    // Check if docker command exists
-    if which::which("docker").is_err() {
-        return Err("Docker is not installed or not found in PATH".to_string());
-    }
+async fn check_docker_available(docker_path: Option<&str>) -> Result<String, String> {
+    let docker_cmd = if let Some(path) = docker_path {
+        // Use custom path if provided and not empty
+        let trimmed_path = path.trim();
+        if trimmed_path.is_empty() {
+            // If path is empty or whitespace, fall back to PATH
+            match which::which("docker") {
+                Ok(path) => path.to_string_lossy().to_string(),
+                Err(_) => return Err("Docker is not installed or not found in PATH".to_string()),
+            }
+        } else if !std::path::Path::new(trimmed_path).exists() {
+            return Err(format!("Docker executable not found at: {}", trimmed_path));
+        } else {
+            trimmed_path.to_string()
+        }
+    } else {
+        // Check if docker command exists in PATH
+        match which::which("docker") {
+            Ok(path) => path.to_string_lossy().to_string(),
+            Err(_) => return Err("Docker is not installed or not found in PATH".to_string()),
+        }
+    };
 
     // Check if Docker daemon is running
-    let output = Command::new("docker")
+    let output = Command::new(&docker_cmd)
         .arg("info")
         .output()
         .await
@@ -343,7 +362,7 @@ async fn check_docker_available() -> Result<(), String> {
         return Err("Docker daemon is not running".to_string());
     }
 
-    Ok(())
+    Ok(docker_cmd)
 }
 
 
@@ -354,10 +373,11 @@ pub async fn build_docker_image(
     image_name: String,
     github_repo_url: String,
     commit: String,
+    docker_path: String,
     app: AppHandle,
 ) -> Result<(), String> {
     // Check if Docker is available
-    check_docker_available().await?;
+    let docker_cmd = check_docker_available(if docker_path.is_empty() { None } else { Some(&docker_path) }).await?;
 
     // Check if there's already a build running
     {
@@ -380,13 +400,14 @@ pub async fn build_docker_image(
 
     // Emit initial log
     let _ = app.emit("build_log", "Starting Docker build...");
+    let _ = app.emit("build_log", &format!("Using Docker: {}", docker_cmd));
     let _ = app.emit("build_log", &format!("Building image: {}", image_name));
     let _ = app.emit("build_log", &format!("Repository: {}", github_repo_url));
     let _ = app.emit("build_log", &format!("Commit: {}", commit));
     let _ = app.emit("build_log", "");
 
     // Start Docker build process
-    let mut cmd = Command::new("docker");
+    let mut cmd = Command::new(&docker_cmd);
     cmd.arg("build")
         .arg("-f")
         .arg(&dockerfile_path)
@@ -538,12 +559,12 @@ pub async fn stop_docker_build() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn check_docker_image_exists(image_name: String) -> Result<bool, String> {
+pub async fn check_docker_image_exists(image_name: String, docker_path: String) -> Result<bool, String> {
     // Check if Docker is available first
-    check_docker_available().await?;
+    let docker_cmd = check_docker_available(if docker_path.is_empty() { None } else { Some(&docker_path) }).await?;
 
     // Use docker images command to check if the image exists
-    let output = Command::new("docker")
+    let output = Command::new(&docker_cmd)
         .arg("images")
         .arg("--format")
         .arg("{{.Repository}}:{{.Tag}}")
@@ -586,6 +607,48 @@ pub async fn check_docker_image_exists(image_name: String) -> Result<bool, Strin
     Ok(image_exists)
 }
 
+// Get the configuration file path
+fn get_config_path() -> PathBuf {
+    let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.push(".swebench-debugger");
+    
+    // Create directory if it doesn't exist
+    if !home.exists() {
+        let _ = fs::create_dir_all(&home);
+    }
+    
+    home.join("config.json")
+}
+
+#[tauri::command]
+pub fn save_docker_path(docker_path: String) -> Result<(), String> {
+    let config_path = get_config_path();
+    let config = serde_json::json!({
+        "docker_path": docker_path
+    });
+    
+    fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
+        .map_err(|e| format!("Failed to save configuration: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub fn load_docker_path() -> Result<String, String> {
+    let config_path = get_config_path();
+    
+    if !config_path.exists() {
+        return Ok(String::new());
+    }
+    
+    let content = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read configuration: {}", e))?;
+    
+    let config: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse configuration: {}", e))?;
+    
+    Ok(config["docker_path"].as_str().unwrap_or("").to_string())
+}
 
 
 #[tauri::command]
@@ -593,10 +656,11 @@ pub async fn run_docker_test(
     image_name: String,
     test_cmd: String,
     test_file_paths: String,
+    docker_path: String,
     app: AppHandle,
 ) -> Result<(), String> {
     // Check if Docker is available
-    check_docker_available().await?;
+    let docker_cmd = check_docker_available(if docker_path.is_empty() { None } else { Some(&docker_path) }).await?;
 
     // Check if there's already a test running
     {
@@ -608,6 +672,7 @@ pub async fn run_docker_test(
 
     // Emit initial log
     let _ = app.emit("test_log", "Starting Docker test run...");
+    let _ = app.emit("test_log", &format!("Using Docker: {}", docker_cmd));
     let _ = app.emit("test_log", &format!("Image: {}", image_name));
     let _ = app.emit("test_log", &format!("Test command: {}", test_cmd));
     let _ = app.emit("test_log", &format!("Test files: {}", test_file_paths));
@@ -621,7 +686,7 @@ pub async fn run_docker_test(
     };
 
     // Start Docker test process
-    let mut cmd = Command::new("docker");
+    let mut cmd = Command::new(&docker_cmd);
     cmd.arg("run")
         .arg("--rm")
         .arg(&image_name)
