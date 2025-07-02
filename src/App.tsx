@@ -36,6 +36,8 @@ function App() {
   const [isTesting, setIsTesting] = useState(false);
   const [testLogs, setTestLogs] = useState<string[]>([]);
   const [shouldAutoScrollTest, setShouldAutoScrollTest] = useState(true);
+  const [dockerPath, setDockerPath] = useState("");
+  const [isDockerPathExpanded, setIsDockerPathExpanded] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const testLogsContainerRef = useRef<HTMLDivElement>(null);
   const buildLogsSectionRef = useRef<HTMLDivElement>(null);
@@ -54,38 +56,42 @@ function App() {
   // Validate Docker image name
   const validateDockerImageName = (name: string): boolean => {
     if (!name.trim()) return false;
-    
+
     // Basic Docker image name validation
     // Must be lowercase, can contain alphanumeric, hyphens, underscores, periods, and slashes
-    const dockerNameRegex = /^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(\:[a-z0-9]([a-z0-9._-]*[a-z0-9])?)?$/;
-    
+    const dockerNameRegex =
+      /^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(\:[a-z0-9]([a-z0-9._-]*[a-z0-9])?)?$/;
+
     // Must not be longer than 128 characters
     if (name.length > 128) return false;
-    
+
     return dockerNameRegex.test(name);
   };
 
   // Extract GitHub repo info and generate image name
   const generateImageNameFromGitHubUrl = (url: string): string => {
     if (!url.trim()) return "";
-    
+
     try {
       // Handle different GitHub URL formats
       let cleanUrl = url.trim();
-      
+
       // Remove .git suffix if present
-      if (cleanUrl.endsWith('.git')) {
+      if (cleanUrl.endsWith(".git")) {
         cleanUrl = cleanUrl.slice(0, -4);
       }
-      
+
       // Extract path from different URL formats
       let repoPath = "";
-      
-      if (cleanUrl.startsWith('https://github.com/') || cleanUrl.startsWith('http://github.com/')) {
-        repoPath = cleanUrl.replace(/^https?:\/\/github\.com\//, '');
-      } else if (cleanUrl.startsWith('git@github.com:')) {
-        repoPath = cleanUrl.replace(/^git@github\.com:/, '');
-      } else if (cleanUrl.includes('github.com/')) {
+
+      if (
+        cleanUrl.startsWith("https://github.com/") ||
+        cleanUrl.startsWith("http://github.com/")
+      ) {
+        repoPath = cleanUrl.replace(/^https?:\/\/github\.com\//, "");
+      } else if (cleanUrl.startsWith("git@github.com:")) {
+        repoPath = cleanUrl.replace(/^git@github\.com:/, "");
+      } else if (cleanUrl.includes("github.com/")) {
         // Handle other formats that contain github.com/
         const match = cleanUrl.match(/github\.com\/(.+)/);
         if (match) {
@@ -94,19 +100,19 @@ function App() {
       } else {
         return ""; // Not a recognizable GitHub URL
       }
-      
+
       // Extract user/repo from path
-      const pathParts = repoPath.split('/');
+      const pathParts = repoPath.split("/");
       if (pathParts.length >= 2) {
         const user = pathParts[0].toLowerCase();
         const repo = pathParts[1].toLowerCase();
-        
+
         // Clean up repo name (remove any additional path segments, query params, etc.)
-        const cleanRepo = repo.split('?')[0].split('#')[0];
-        
+        const cleanRepo = repo.split("?")[0].split("#")[0];
+
         return `${user}__${cleanRepo}`;
       }
-      
+
       return "";
     } catch (error) {
       return "";
@@ -126,6 +132,36 @@ function App() {
     setIsValidImageName(validateDockerImageName(imageName));
   }, [imageName]);
 
+  // Load Docker path configuration on app start
+  useEffect(() => {
+    const loadDockerPath = async () => {
+      try {
+        const savedPath = await invoke<string>("load_docker_path");
+        setDockerPath(savedPath);
+      } catch (error) {
+        console.error("Failed to load Docker path:", error);
+      }
+    };
+
+    loadDockerPath();
+  }, []);
+
+  // Save Docker path when it changes
+  useEffect(() => {
+    const saveDockerPath = async () => {
+      try {
+        // Only save if dockerPath is not undefined (avoid saving on initial load)
+        if (dockerPath !== undefined) {
+          await invoke("save_docker_path", { dockerPath: dockerPath.trim() });
+        }
+      } catch (error) {
+        console.error("Failed to save Docker path:", error);
+      }
+    };
+
+    saveDockerPath();
+  }, [dockerPath]);
+
   // Check if image exists when image name changes
   useEffect(() => {
     if (imageName && isValidImageName) {
@@ -141,24 +177,42 @@ function App() {
       // First, check JSON syntax
       const syntaxValid = validateJsonSyntax(jsonSpec);
       setIsValidJson(syntaxValid);
-      
+
       if (!syntaxValid) {
-        setValidationError("Invalid JSON syntax. Please fix the JSON before proceeding.");
-        setGeneratedDockerfile("# Invalid JSON syntax\n# Please check your JSON format");
+        setValidationError(
+          "Invalid JSON syntax. Please fix the JSON before proceeding."
+        );
+        setGeneratedDockerfile(
+          "# Invalid JSON syntax\n# Please check your JSON format"
+        );
         return;
       }
 
       // Check if we have the required inputs
       if (!githubRepoUrl.trim()) {
-        setValidationError("GitHub repository URL is required for Dockerfile generation.");
-        setGeneratedDockerfile("# Missing GitHub repository URL\n# Please enter a GitHub repository URL");
+        setValidationError(
+          "GitHub repository URL is required for Dockerfile generation."
+        );
+        setGeneratedDockerfile(
+          "# Missing GitHub repository URL\n# Please enter a GitHub repository URL"
+        );
         return;
       }
 
       const commitToUse = useHeadCommit ? headCommit : baseCommit;
       if (!commitToUse.trim()) {
-        setValidationError(`${useHeadCommit ? 'Head' : 'Base'} commit is required for Dockerfile generation.`);
-        setGeneratedDockerfile(`# Missing ${useHeadCommit ? 'head' : 'base'} commit\n# Please enter a ${useHeadCommit ? 'head' : 'base'} commit hash`);
+        setValidationError(
+          `${
+            useHeadCommit ? "Head" : "Base"
+          } commit is required for Dockerfile generation.`
+        );
+        setGeneratedDockerfile(
+          `# Missing ${
+            useHeadCommit ? "head" : "base"
+          } commit\n# Please enter a ${
+            useHeadCommit ? "head" : "base"
+          } commit hash`
+        );
         return;
       }
 
@@ -169,7 +223,7 @@ function App() {
         const result = await invoke<ValidationResult>("generate_docker_file", {
           inputJson: jsonSpec,
           githubRepoUrl: githubRepoUrl.trim(),
-          commit: commitToUse.trim()
+          commit: commitToUse.trim(),
         });
 
         if (result.success && result.dockerfile) {
@@ -177,12 +231,18 @@ function App() {
           setValidationError(null);
         } else if (result.error) {
           setValidationError(result.error);
-          setGeneratedDockerfile("# Validation failed\n# " + result.error.replace(/\n/g, "\n# "));
+          setGeneratedDockerfile(
+            "# Validation failed\n# " + result.error.replace(/\n/g, "\n# ")
+          );
         }
       } catch (error) {
         console.error("Failed to generate Dockerfile:", error);
-        setValidationError("Failed to communicate with backend: " + String(error));
-        setGeneratedDockerfile("# Backend error\n# Failed to generate Dockerfile");
+        setValidationError(
+          "Failed to communicate with backend: " + String(error)
+        );
+        setGeneratedDockerfile(
+          "# Backend error\n# Failed to generate Dockerfile"
+        );
       }
     };
 
@@ -192,14 +252,16 @@ function App() {
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (shouldAutoScroll && logsContainerRef.current) {
-      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+      logsContainerRef.current.scrollTop =
+        logsContainerRef.current.scrollHeight;
     }
   }, [buildLogs, shouldAutoScroll]);
 
   // Auto-scroll to bottom when new test logs arrive
   useEffect(() => {
     if (shouldAutoScrollTest && testLogsContainerRef.current) {
-      testLogsContainerRef.current.scrollTop = testLogsContainerRef.current.scrollHeight;
+      testLogsContainerRef.current.scrollTop =
+        testLogsContainerRef.current.scrollHeight;
     }
   }, [testLogs, shouldAutoScrollTest]);
 
@@ -208,9 +270,9 @@ function App() {
     if (isBuilding && buildLogsSectionRef.current) {
       // Small delay to ensure the section is rendered
       setTimeout(() => {
-        buildLogsSectionRef.current?.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
+        buildLogsSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
         });
       }, 100);
     }
@@ -221,9 +283,9 @@ function App() {
     if (isTesting && testLogsSectionRef.current) {
       // Small delay to ensure the section is rendered
       setTimeout(() => {
-        testLogsSectionRef.current?.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
+        testLogsSectionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
         });
       }, 100);
     }
@@ -232,7 +294,8 @@ function App() {
   // Handle scroll events to detect manual scrolling
   const handleScroll = () => {
     if (logsContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = logsContainerRef.current;
+      const { scrollTop, scrollHeight, clientHeight } =
+        logsContainerRef.current;
       const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5; // 5px threshold
       setShouldAutoScroll(isAtBottom);
     }
@@ -244,19 +307,25 @@ function App() {
       setBuildLogs((prev: string[]) => [...prev, event.payload]);
     });
 
-    const unlistenBuildComplete = listen<{ success: boolean; error?: string }>("build_complete", (event) => {
-      setIsBuilding(false);
-      if (!event.payload.success && event.payload.error) {
-        setBuildLogs((prev: string[]) => [...prev, `ERROR: ${event.payload.error}`]);
-      } else if (event.payload.success) {
-        // Recheck if the image exists after successful build to enable test button
-        checkImageExists(imageName);
+    const unlistenBuildComplete = listen<{ success: boolean; error?: string }>(
+      "build_complete",
+      (event) => {
+        setIsBuilding(false);
+        if (!event.payload.success && event.payload.error) {
+          setBuildLogs((prev: string[]) => [
+            ...prev,
+            `ERROR: ${event.payload.error}`,
+          ]);
+        } else if (event.payload.success) {
+          // Recheck if the image exists after successful build to enable test button
+          checkImageExists(imageName);
+        }
       }
-    });
+    );
 
     return () => {
-      unlisten.then(f => f());
-      unlistenBuildComplete.then(f => f());
+      unlisten.then((f) => f());
+      unlistenBuildComplete.then((f) => f());
     };
   }, [imageName]);
 
@@ -266,35 +335,48 @@ function App() {
       setTestLogs((prev: string[]) => [...prev, event.payload]);
     });
 
-    const unlistenTestComplete = listen<{ success: boolean; error?: string }>("test_complete", (event) => {
-      setIsTesting(false);
-      if (!event.payload.success && event.payload.error) {
-        setTestLogs((prev: string[]) => [...prev, `ERROR: ${event.payload.error}`]);
+    const unlistenTestComplete = listen<{ success: boolean; error?: string }>(
+      "test_complete",
+      (event) => {
+        setIsTesting(false);
+        if (!event.payload.success && event.payload.error) {
+          setTestLogs((prev: string[]) => [
+            ...prev,
+            `ERROR: ${event.payload.error}`,
+          ]);
+        }
       }
-    });
+    );
 
     return () => {
-      unlistenTestLog.then(f => f());
-      unlistenTestComplete.then(f => f());
+      unlistenTestLog.then((f) => f());
+      unlistenTestComplete.then((f) => f());
     };
   }, []);
 
   const handleBuild = async () => {
-    if (!isValidImageName || isBuilding || !isValidJson || validationError !== null) return;
-    
+    if (
+      !isValidImageName ||
+      isBuilding ||
+      !isValidJson ||
+      validationError !== null
+    )
+      return;
+
     setIsBuilding(true);
     setBuildLogs([]);
     setTestLogs([]); // Clear test logs when starting a new build
     setShouldAutoScroll(true); // Reset auto-scroll for new build
-    
+
     const commitToUse = useHeadCommit ? headCommit : baseCommit;
-    
+
     try {
       await invoke("build_docker_image", {
         dockerfileContent: generatedDockerfile,
         imageName: imageName.trim(),
         githubRepoUrl: githubRepoUrl.trim(),
-        commit: commitToUse.trim()
+        commit: commitToUse.trim(),
+        dockerPath: dockerPath.trim(),
       });
     } catch (error) {
       setIsBuilding(false);
@@ -314,7 +396,7 @@ function App() {
 
   const handleTest = async () => {
     if (!isImageExists || isTesting) return;
-    
+
     // Extract test_cmd from the JSON spec
     let testCmd = "";
     try {
@@ -324,21 +406,22 @@ function App() {
       console.error("Failed to parse JSON spec:", error);
       return;
     }
-    
+
     if (!testCmd.trim()) {
       console.error("No test command found in JSON spec");
       return;
     }
-    
+
     setIsTesting(true);
     setTestLogs([]);
     setShouldAutoScrollTest(true); // Reset auto-scroll for new test
-    
+
     try {
       await invoke("run_docker_test", {
         imageName: imageName.trim(),
         testCmd: testCmd.trim(),
-        testFilePaths: testFiles.trim()
+        testFilePaths: testFiles.trim(),
+        dockerPath: dockerPath.trim(),
       });
     } catch (error) {
       setIsTesting(false);
@@ -359,14 +442,18 @@ function App() {
   // Handle scroll events for test logs
   const handleTestScroll = () => {
     if (testLogsContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = testLogsContainerRef.current;
+      const { scrollTop, scrollHeight, clientHeight } =
+        testLogsContainerRef.current;
       const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5; // 5px threshold
       setShouldAutoScrollTest(isAtBottom);
     }
   };
 
   const checkImageExists = async (imageNameToCheck: string) => {
-    if (!imageNameToCheck.trim() || !validateDockerImageName(imageNameToCheck)) {
+    if (
+      !imageNameToCheck.trim() ||
+      !validateDockerImageName(imageNameToCheck)
+    ) {
       setIsImageExists(false);
       return;
     }
@@ -374,7 +461,8 @@ function App() {
     setIsCheckingImage(true);
     try {
       const exists = await invoke<boolean>("check_docker_image_exists", {
-        imageName: imageNameToCheck.trim()
+        imageName: imageNameToCheck.trim(),
+        dockerPath: dockerPath.trim(),
       });
       setIsImageExists(exists);
     } catch (error) {
@@ -391,6 +479,56 @@ function App() {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-8">
           SWEBench Debugger
         </h1>
+
+        {/* Docker Configuration Section */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Docker Configuration
+            </h2>
+            <button
+              onClick={() => setIsDockerPathExpanded(!isDockerPathExpanded)}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+            >
+              {isDockerPathExpanded ? "Hide" : "Show"} Advanced
+            </button>
+          </div>
+
+          {isDockerPathExpanded && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[140px]">
+                  Docker Path
+                </label>
+                <input
+                  type="text"
+                  value={dockerPath}
+                  onChange={(e) => setDockerPath(e.target.value)}
+                  className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Leave empty to use system PATH (e.g., /usr/local/bin/docker)"
+                />
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                <p>• Leave empty to use Docker from system PATH</p>
+                <p>
+                  • Specify full path to Docker executable (e.g.,
+                  /usr/local/bin/docker)
+                </p>
+                <p>• Useful when Docker is installed in a custom location</p>
+                {dockerPath.trim() && (
+                  <p className="mt-2 text-blue-600 dark:text-blue-400">
+                    ✓ Using custom Docker path: {dockerPath.trim()}
+                  </p>
+                )}
+                {!dockerPath.trim() && (
+                  <p className="mt-2 text-green-600 dark:text-green-400">
+                    ✓ Using Docker from system PATH
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         <RepositoryForm
           githubRepoUrl={githubRepoUrl}
