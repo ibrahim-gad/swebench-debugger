@@ -87,7 +87,7 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Tab Bar */}
-      <div className="border-gray-200 dark:border-gray-700">
+      <div className="border-gray-200 dark:border-gray-700 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-0 overflow-x-auto">
             {tabs.map((tab) => (
