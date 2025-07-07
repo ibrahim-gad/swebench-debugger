@@ -1,136 +1,24 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import RepositoryForm from "./components/RepositoryForm";
-import BuildSection from "./components/BuildSection";
-import TestSection from "./components/TestSection";
 import "./App.css";
+import { SWEBenchTab } from "./components/Tab";
 
-interface ValidationResult {
-  success: boolean;
-  error?: string;
-  dockerfile?: string;
+interface TabsState {
+  id: string;
+  title: string;
 }
 
+// Main App component with tab management
 function App() {
-  const [githubRepoUrl, setGithubRepoUrl] = useState("");
-  const [baseCommit, setBaseCommit] = useState("");
-  const [headCommit, setHeadCommit] = useState("");
-  const [jsonSpec, setJsonSpec] = useState<string>(`{
-  "test_cmd": "npm test",
-  "log_parser_name": "jest"
-}`);
-  const [imageName, setImageName] = useState("");
-  const [testFiles, setTestFiles] = useState("");
-  const [isDockerfileExpanded, setIsDockerfileExpanded] = useState(false);
-  const [generatedDockerfile, setGeneratedDockerfile] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [isValidJson, setIsValidJson] = useState(true);
-  const [useHeadCommit, setUseHeadCommit] = useState(false);
-  const [isBuilding, setIsBuilding] = useState(false);
-  const [buildLogs, setBuildLogs] = useState<string[]>([]);
-  const [isValidImageName, setIsValidImageName] = useState(false);
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-  const [isImageExists, setIsImageExists] = useState(false);
-  const [isCheckingImage, setIsCheckingImage] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testLogs, setTestLogs] = useState<string[]>([]);
-  const [shouldAutoScrollTest, setShouldAutoScrollTest] = useState(true);
+  const [tabs, setTabs] = useState<TabsState[]>([
+    {
+      id: "1",
+      title: "Untitled",
+    },
+  ]);
+  const [activeTabId, setActiveTabId] = useState("1");
   const [dockerPath, setDockerPath] = useState("");
   const [isDockerPathExpanded, setIsDockerPathExpanded] = useState(false);
-  const logsContainerRef = useRef<HTMLDivElement>(null);
-  const testLogsContainerRef = useRef<HTMLDivElement>(null);
-  const buildLogsSectionRef = useRef<HTMLDivElement>(null);
-  const testLogsSectionRef = useRef<HTMLDivElement>(null);
-
-  // Validate JSON syntax
-  const validateJsonSyntax = (jsonString: string): boolean => {
-    try {
-      JSON.parse(jsonString);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  // Validate Docker image name
-  const validateDockerImageName = (name: string): boolean => {
-    if (!name.trim()) return false;
-
-    // Basic Docker image name validation
-    // Must be lowercase, can contain alphanumeric, hyphens, underscores, periods, and slashes
-    const dockerNameRegex =
-      /^[a-z0-9]([a-z0-9._-]*[a-z0-9])?(\:[a-z0-9]([a-z0-9._-]*[a-z0-9])?)?$/;
-
-    // Must not be longer than 128 characters
-    if (name.length > 128) return false;
-
-    return dockerNameRegex.test(name);
-  };
-
-  // Extract GitHub repo info and generate image name
-  const generateImageNameFromGitHubUrl = (url: string): string => {
-    if (!url.trim()) return "";
-
-    try {
-      // Handle different GitHub URL formats
-      let cleanUrl = url.trim();
-
-      // Remove .git suffix if present
-      if (cleanUrl.endsWith(".git")) {
-        cleanUrl = cleanUrl.slice(0, -4);
-      }
-
-      // Extract path from different URL formats
-      let repoPath = "";
-
-      if (
-        cleanUrl.startsWith("https://github.com/") ||
-        cleanUrl.startsWith("http://github.com/")
-      ) {
-        repoPath = cleanUrl.replace(/^https?:\/\/github\.com\//, "");
-      } else if (cleanUrl.startsWith("git@github.com:")) {
-        repoPath = cleanUrl.replace(/^git@github\.com:/, "");
-      } else if (cleanUrl.includes("github.com/")) {
-        // Handle other formats that contain github.com/
-        const match = cleanUrl.match(/github\.com\/(.+)/);
-        if (match) {
-          repoPath = match[1];
-        }
-      } else {
-        return ""; // Not a recognizable GitHub URL
-      }
-
-      // Extract user/repo from path
-      const pathParts = repoPath.split("/");
-      if (pathParts.length >= 2) {
-        const user = pathParts[0].toLowerCase();
-        const repo = pathParts[1].toLowerCase();
-
-        // Clean up repo name (remove any additional path segments, query params, etc.)
-        const cleanRepo = repo.split("?")[0].split("#")[0];
-
-        return `${user}__${cleanRepo}`;
-      }
-
-      return "";
-    } catch (error) {
-      return "";
-    }
-  };
-
-  // Auto-generate image name when GitHub URL changes
-  useEffect(() => {
-    const generatedImageName = generateImageNameFromGitHubUrl(githubRepoUrl);
-    if (generatedImageName) {
-      setImageName(generatedImageName);
-    }
-  }, [githubRepoUrl]);
-
-  // Update image name validation when imageName changes
-  useEffect(() => {
-    setIsValidImageName(validateDockerImageName(imageName));
-  }, [imageName]);
 
   // Load Docker path configuration on app start
   useEffect(() => {
@@ -162,426 +50,174 @@ function App() {
     saveDockerPath();
   }, [dockerPath]);
 
-  // Check if image exists when image name changes
-  useEffect(() => {
-    if (imageName && isValidImageName) {
-      checkImageExists(imageName);
-    } else {
-      setIsImageExists(false);
-    }
-  }, [imageName, isValidImageName]);
-
-  // Generate Dockerfile from JSON spec using backend validation
-  useEffect(() => {
-    const generateDockerfile = async () => {
-      // First, check JSON syntax
-      const syntaxValid = validateJsonSyntax(jsonSpec);
-      setIsValidJson(syntaxValid);
-
-      if (!syntaxValid) {
-        setValidationError(
-          "Invalid JSON syntax. Please fix the JSON before proceeding."
-        );
-        setGeneratedDockerfile(
-          "# Invalid JSON syntax\n# Please check your JSON format"
-        );
-        return;
-      }
-
-      // Check if we have the required inputs
-      if (!githubRepoUrl.trim()) {
-        setValidationError(
-          "GitHub repository URL is required for Dockerfile generation."
-        );
-        setGeneratedDockerfile(
-          "# Missing GitHub repository URL\n# Please enter a GitHub repository URL"
-        );
-        return;
-      }
-
-      const commitToUse = useHeadCommit ? headCommit : baseCommit;
-      if (!commitToUse.trim()) {
-        setValidationError(
-          `${
-            useHeadCommit ? "Head" : "Base"
-          } commit is required for Dockerfile generation.`
-        );
-        setGeneratedDockerfile(
-          `# Missing ${
-            useHeadCommit ? "head" : "base"
-          } commit\n# Please enter a ${
-            useHeadCommit ? "head" : "base"
-          } commit hash`
-        );
-        return;
-      }
-
-      setValidationError(null);
-
-      try {
-        // Call the backend validation and generation
-        const result = await invoke<ValidationResult>("generate_docker_file", {
-          inputJson: jsonSpec,
-          githubRepoUrl: githubRepoUrl.trim(),
-          commit: commitToUse.trim(),
-        });
-
-        if (result.success && result.dockerfile) {
-          setGeneratedDockerfile(result.dockerfile);
-          setValidationError(null);
-        } else if (result.error) {
-          setValidationError(result.error);
-          setGeneratedDockerfile(
-            "# Validation failed\n# " + result.error.replace(/\n/g, "\n# ")
-          );
-        }
-      } catch (error) {
-        console.error("Failed to generate Dockerfile:", error);
-        setValidationError(
-          "Failed to communicate with backend: " + String(error)
-        );
-        setGeneratedDockerfile(
-          "# Backend error\n# Failed to generate Dockerfile"
-        );
-      }
-    };
-
-    generateDockerfile();
-  }, [jsonSpec, githubRepoUrl, baseCommit, headCommit, useHeadCommit]);
-
-  // Auto-scroll to bottom when new logs arrive
-  useEffect(() => {
-    if (shouldAutoScroll && logsContainerRef.current) {
-      logsContainerRef.current.scrollTop =
-        logsContainerRef.current.scrollHeight;
-    }
-  }, [buildLogs, shouldAutoScroll]);
-
-  // Auto-scroll to bottom when new test logs arrive
-  useEffect(() => {
-    if (shouldAutoScrollTest && testLogsContainerRef.current) {
-      testLogsContainerRef.current.scrollTop =
-        testLogsContainerRef.current.scrollHeight;
-    }
-  }, [testLogs, shouldAutoScrollTest]);
-
-  // Scroll build logs section into view when build starts
-  useEffect(() => {
-    if (isBuilding && buildLogsSectionRef.current) {
-      // Small delay to ensure the section is rendered
-      setTimeout(() => {
-        buildLogsSectionRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 100);
-    }
-  }, [isBuilding]);
-
-  // Scroll test logs section into view when test starts
-  useEffect(() => {
-    if (isTesting && testLogsSectionRef.current) {
-      // Small delay to ensure the section is rendered
-      setTimeout(() => {
-        testLogsSectionRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 100);
-    }
-  }, [isTesting]);
-
-  // Handle scroll events to detect manual scrolling
-  const handleScroll = () => {
-    if (logsContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } =
-        logsContainerRef.current;
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5; // 5px threshold
-      setShouldAutoScroll(isAtBottom);
-    }
-  };
-
-  // Listen for build logs
-  useEffect(() => {
-    const unlisten = listen<string>("build_log", (event) => {
-      setBuildLogs((prev: string[]) => [...prev, event.payload]);
-    });
-
-    const unlistenBuildComplete = listen<{ success: boolean; error?: string }>(
-      "build_complete",
-      (event) => {
-        setIsBuilding(false);
-        if (!event.payload.success && event.payload.error) {
-          setBuildLogs((prev: string[]) => [
-            ...prev,
-            `ERROR: ${event.payload.error}`,
-          ]);
-        } else if (event.payload.success) {
-          // Recheck if the image exists after successful build to enable test button
-          checkImageExists(imageName);
-        }
-      }
+  // Update tab data
+  const updateTabData = (tabId: string, updates: Partial<TabsState>) => {
+    setTabs((prevTabs) =>
+      prevTabs.map((tab) => (tab.id === tabId ? { ...tab, ...updates } : tab))
     );
+  };
 
-    return () => {
-      unlisten.then((f) => f());
-      unlistenBuildComplete.then((f) => f());
+  // Add new tab
+  const addTab = () => {
+    const newTabId = Date.now().toString();
+    const newTab: TabsState = {
+      id: newTabId,
+      title: "Untitled",
     };
-  }, [imageName]);
+    setTabs((prevTabs) => [...prevTabs, newTab]);
+    setActiveTabId(newTabId);
+  };
 
-  // Listen for test logs
-  useEffect(() => {
-    const unlistenTestLog = listen<string>("test_log", (event) => {
-      setTestLogs((prev: string[]) => [...prev, event.payload]);
-    });
+  // Close tab
+  const closeTab = (tabId: string) => {
+    if (tabs.length <= 1) return; // Don't close the last tab
 
-    const unlistenTestComplete = listen<{ success: boolean; error?: string }>(
-      "test_complete",
-      (event) => {
-        setIsTesting(false);
-        if (!event.payload.success && event.payload.error) {
-          setTestLogs((prev: string[]) => [
-            ...prev,
-            `ERROR: ${event.payload.error}`,
-          ]);
-        }
+    setTabs((prevTabs) => prevTabs.filter((tab) => tab.id !== tabId));
+
+    // If we're closing the active tab, switch to the previous tab
+    if (activeTabId === tabId) {
+      const currentIndex = tabs.findIndex((tab) => tab.id === tabId);
+      const newActiveTab = tabs[currentIndex - 1] || tabs[currentIndex + 1];
+      if (newActiveTab) {
+        setActiveTabId(newActiveTab.id);
       }
-    );
-
-    return () => {
-      unlistenTestLog.then((f) => f());
-      unlistenTestComplete.then((f) => f());
-    };
-  }, []);
-
-  const handleBuild = async () => {
-    if (
-      !isValidImageName ||
-      isBuilding ||
-      !isValidJson ||
-      validationError !== null
-    )
-      return;
-
-    setIsBuilding(true);
-    setBuildLogs([]);
-    setTestLogs([]); // Clear test logs when starting a new build
-    setShouldAutoScroll(true); // Reset auto-scroll for new build
-
-    const commitToUse = useHeadCommit ? headCommit : baseCommit;
-
-    try {
-      await invoke("build_docker_image", {
-        dockerfileContent: generatedDockerfile,
-        imageName: imageName.trim(),
-        githubRepoUrl: githubRepoUrl.trim(),
-        commit: commitToUse.trim(),
-        dockerPath: dockerPath.trim(),
-      });
-    } catch (error) {
-      setIsBuilding(false);
-      setBuildLogs((prev: string[]) => [...prev, `ERROR: ${error}`]);
-      console.error("Build failed:", error);
-    }
-  };
-
-  const handleStopBuild = async () => {
-    try {
-      await invoke("stop_docker_build");
-      setIsBuilding(false);
-    } catch (error) {
-      console.error("Failed to stop build:", error);
-    }
-  };
-
-  const handleTest = async () => {
-    if (!isImageExists || isTesting) return;
-
-    // Extract test_cmd from the JSON spec
-    let testCmd = "";
-    try {
-      const parsedSpec = JSON.parse(jsonSpec);
-      testCmd = parsedSpec.test_cmd || "";
-    } catch (error) {
-      console.error("Failed to parse JSON spec:", error);
-      return;
-    }
-
-    if (!testCmd.trim()) {
-      console.error("No test command found in JSON spec");
-      return;
-    }
-
-    setIsTesting(true);
-    setTestLogs([]);
-    setShouldAutoScrollTest(true); // Reset auto-scroll for new test
-
-    try {
-      await invoke("run_docker_test", {
-        imageName: imageName.trim(),
-        testCmd: testCmd.trim(),
-        testFilePaths: testFiles.trim(),
-        dockerPath: dockerPath.trim(),
-      });
-    } catch (error) {
-      setIsTesting(false);
-      setTestLogs((prev: string[]) => [...prev, `ERROR: ${error}`]);
-      console.error("Test failed:", error);
-    }
-  };
-
-  const handleStopTest = async () => {
-    try {
-      await invoke("stop_docker_test");
-      setIsTesting(false);
-    } catch (error) {
-      console.error("Failed to stop test:", error);
-    }
-  };
-
-  // Handle scroll events for test logs
-  const handleTestScroll = () => {
-    if (testLogsContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } =
-        testLogsContainerRef.current;
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5; // 5px threshold
-      setShouldAutoScrollTest(isAtBottom);
-    }
-  };
-
-  const checkImageExists = async (imageNameToCheck: string) => {
-    if (
-      !imageNameToCheck.trim() ||
-      !validateDockerImageName(imageNameToCheck)
-    ) {
-      setIsImageExists(false);
-      return;
-    }
-
-    setIsCheckingImage(true);
-    try {
-      const exists = await invoke<boolean>("check_docker_image_exists", {
-        imageName: imageNameToCheck.trim(),
-        dockerPath: dockerPath.trim(),
-      });
-      setIsImageExists(exists);
-    } catch (error) {
-      console.error("Failed to check if image exists:", error);
-      setIsImageExists(false);
-    } finally {
-      setIsCheckingImage(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div className="max-w-6xl mx-auto space-y-6 pb-16">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-8">
-          SWEBench Debugger
-        </h1>
-
-        {/* Docker Configuration Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Docker Configuration
-            </h2>
-            <button
-              onClick={() => setIsDockerPathExpanded(!isDockerPathExpanded)}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Tab Bar */}
+      <div className="border-gray-200 dark:border-gray-700 sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-0 overflow-x-auto">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`flex items-center space-x-2 px-6 py-2 cursor-pointer transition-colors border-b-2 border-transparent select-none
+                  ${
+                    activeTabId === tab.id
+                      ? "bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white border-b-blue-500 dark:border-b-blue-400 font-semibold"
+                      : "bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-500"
+                  }
+                  rounded-none m-0`}
+                style={{ borderRadius: 0, margin: 0 }}
+                onClick={() => setActiveTabId(tab.id)}
+              >
+                <span className="text-sm font-medium truncate max-w-64">
+                  {tab.title}
+                </span>
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+            {/* + Button as a tab */}
+            <div
+              className="flex items-center px-6 py-2 cursor-pointer transition-colors bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-500 rounded-none m-0 border-b-2 border-transparent"
+              style={{ borderRadius: 0, margin: 0 }}
+              onClick={addTab}
+              title="New Tab"
             >
-              {isDockerPathExpanded ? "Hide" : "Show"} Advanced
-            </button>
-          </div>
-
-          {isDockerPathExpanded && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[140px]">
-                  Docker Path
-                </label>
-                <input
-                  type="text"
-                  value={dockerPath}
-                  onChange={(e) => setDockerPath(e.target.value)}
-                  className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  placeholder="Leave empty to use system PATH (e.g., /usr/local/bin/docker)"
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
                 />
-              </div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                <p>• Leave empty to use Docker from system PATH</p>
-                <p>
-                  • Specify full path to Docker executable (e.g.,
-                  /usr/local/bin/docker)
-                </p>
-                <p>• Useful when Docker is installed in a custom location</p>
-                {dockerPath.trim() && (
-                  <p className="mt-2 text-blue-600 dark:text-blue-400">
-                    ✓ Using custom Docker path: {dockerPath.trim()}
-                  </p>
-                )}
-                {!dockerPath.trim() && (
-                  <p className="mt-2 text-green-600 dark:text-green-400">
-                    ✓ Using Docker from system PATH
-                  </p>
-                )}
-              </div>
+              </svg>
             </div>
-          )}
+          </div>
+        </div>
+      </div>
+
+      {/* Docker Configuration Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 m-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Docker Configuration
+          </h2>
+          <button
+            onClick={() => setIsDockerPathExpanded(!isDockerPathExpanded)}
+            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+          >
+            {isDockerPathExpanded ? "Hide" : "Show"} Advanced
+          </button>
         </div>
 
-        <RepositoryForm
-          githubRepoUrl={githubRepoUrl}
-          setGithubRepoUrl={setGithubRepoUrl}
-          baseCommit={baseCommit}
-          setBaseCommit={setBaseCommit}
-          headCommit={headCommit}
-          setHeadCommit={setHeadCommit}
-          jsonSpec={jsonSpec}
-          setJsonSpec={setJsonSpec}
-          isDockerfileExpanded={isDockerfileExpanded}
-          setIsDockerfileExpanded={setIsDockerfileExpanded}
-          generatedDockerfile={generatedDockerfile}
-          validationError={validationError}
-          isValidJson={isValidJson}
-          useHeadCommit={useHeadCommit}
-          setUseHeadCommit={setUseHeadCommit}
-        />
-
-        <BuildSection
-          imageName={imageName}
-          setImageName={setImageName}
-          isBuilding={isBuilding}
-          buildLogs={buildLogs}
-          shouldAutoScroll={shouldAutoScroll}
-          setShouldAutoScroll={setShouldAutoScroll}
-          handleBuild={handleBuild}
-          handleStopBuild={handleStopBuild}
-          isValidImageName={isValidImageName}
-          generatedDockerfile={generatedDockerfile}
-          isValidJson={isValidJson}
-          validationError={validationError}
-          logsContainerRef={logsContainerRef}
-          buildLogsSectionRef={buildLogsSectionRef}
-          handleScroll={handleScroll}
-        />
-
-        <TestSection
-          testFiles={testFiles}
-          setTestFiles={setTestFiles}
-          isTesting={isTesting}
-          testLogs={testLogs}
-          shouldAutoScrollTest={shouldAutoScrollTest}
-          setShouldAutoScrollTest={setShouldAutoScrollTest}
-          handleTest={handleTest}
-          handleStopTest={handleStopTest}
-          isImageExists={isImageExists}
-          isCheckingImage={isCheckingImage}
-          testLogsContainerRef={testLogsContainerRef}
-          testLogsSectionRef={testLogsSectionRef}
-          handleTestScroll={handleTestScroll}
-        />
+        {isDockerPathExpanded && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[140px]">
+                Docker Path
+              </label>
+              <input
+                type="text"
+                value={dockerPath}
+                onChange={(e) => setDockerPath(e.target.value)}
+                className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                placeholder="Leave empty to use system PATH (e.g., /usr/local/bin/docker)"
+              />
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              <p>• Leave empty to use Docker from system PATH</p>
+              <p>
+                • Specify full path to Docker executable (e.g.,
+                /usr/local/bin/docker)
+              </p>
+              <p>• Useful when Docker is installed in a custom location</p>
+              {dockerPath.trim() && (
+                <p className="mt-2 text-blue-600 dark:text-blue-400">
+                  ✓ Using custom Docker path: {dockerPath.trim()}
+                </p>
+              )}
+              {!dockerPath.trim() && (
+                <p className="mt-2 text-green-600 dark:text-green-400">
+                  ✓ Using Docker from system PATH
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Tab Content */}
+      {tabs.map((tab) => (
+        <SWEBenchTab
+          key={tab.id}
+          visible={activeTabId === tab.id}
+          onTabNameChange={(name) =>
+            updateTabData(activeTabId, { title: name })
+          }
+          dockerPath={dockerPath}
+          setDockerPath={setDockerPath}
+        />
+      ))}
     </div>
   );
 }
