@@ -18,6 +18,8 @@ interface RepositoryFormProps {
   isValidJson: boolean;
   useHeadCommit: boolean;
   setUseHeadCommit: (value: boolean) => void;
+  language: string;
+  setLanguage: (lang: string) => void;
 }
 
 export default function RepositoryForm({
@@ -36,6 +38,8 @@ export default function RepositoryForm({
   isValidJson,
   useHeadCommit,
   setUseHeadCommit,
+  language,
+  setLanguage,
 }: RepositoryFormProps) {
   const handleCopyDockerfile = async () => {
     try {
@@ -67,18 +71,40 @@ export default function RepositoryForm({
 
   return (
     <div className="space-y-6">
-      {/* First Row: GitHub Repo URL */}
-      <div className="flex items-center gap-4">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[140px]">
-          GitHub Repo URL
-        </label>
-        <input
-          type="text"
-          value={githubRepoUrl}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => setGithubRepoUrl(e.target.value)}
-          className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-          placeholder="Enter GitHub repository URL..."
-        />
+      {/* First Row: Language and GitHub Repo URL */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px]">
+            Language
+          </label>
+          <div className="relative flex-1">
+            <select
+              value={language}
+              onChange={e => setLanguage(e.target.value)}
+              className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:!bg-gray-800 text-gray-700 dark:text-white transition-colors pr-8 appearance-none"
+              style={{ minWidth: 0 }}
+            >
+              <option value="Javascript">Javascript</option>
+              <option value="Rust">Rust</option>
+              <option value="C/CPP">C/CPP</option>
+            </select>
+            <span className="pointer-events-none absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 dark:text-gray-300 text-base">
+              ▼
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[100px]">
+            GitHub Repo URL
+          </label>
+          <input
+            type="text"
+            value={githubRepoUrl}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setGithubRepoUrl(e.target.value)}
+            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-700 dark:text-white transition-colors"
+            placeholder="Enter GitHub repository URL..."
+          />
+        </div>
       </div>
 
       {/* Second Row: Base and Head Commit */}

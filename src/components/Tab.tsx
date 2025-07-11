@@ -159,11 +159,15 @@ export function SWEBenchTab({
   onTabNameChange,
   dockerPath,
   visible,
+  language,
+  setLanguage,
 }: {
   onTabNameChange: (name: string) => void;
   dockerPath: string;
   setDockerPath: (path: string) => void;
   visible: boolean;
+  language: string;
+  setLanguage: (lang: string) => void;
 }) {
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const testLogsContainerRef = useRef<HTMLDivElement>(null);
@@ -668,6 +672,8 @@ export function SWEBenchTab({
           setUseHeadCommit={(useHead) =>
             dispatch({ type: "SET_USE_HEAD_COMMIT", payload: useHead })
           }
+          language={language}
+          setLanguage={setLanguage}
         />
 
         <BuildSection
