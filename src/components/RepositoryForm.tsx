@@ -81,7 +81,7 @@ export default function RepositoryForm({
             <select
               value={language}
               onChange={e => setLanguage(e.target.value)}
-              className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:!bg-gray-800 text-gray-700 dark:text-white transition-colors pr-8 appearance-none"
+              className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-700 dark:text-white transition-colors pr-8 appearance-none"
               style={{ minWidth: 0 }}
             >
               <option value="Javascript">Javascript</option>
@@ -117,7 +117,7 @@ export default function RepositoryForm({
             type="text"
             value={baseCommit}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setBaseCommit(e.target.value)}
-            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-700 dark:text-white"
             placeholder="Enter base commit hash..."
           />
         </div>
@@ -129,7 +129,7 @@ export default function RepositoryForm({
             type="text"
             value={headCommit}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setHeadCommit(e.target.value)}
-            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+            className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-700 dark:text-white"
             placeholder="Enter head commit hash..."
           />
         </div>

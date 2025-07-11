@@ -621,35 +621,36 @@ fn get_config_path() -> PathBuf {
 }
 
 #[tauri::command]
-pub fn save_docker_path(docker_path: String) -> Result<(), String> {
+pub fn save_config(key: String, value: String) -> Result<(), String> {
     let config_path = get_config_path();
-    let config = serde_json::json!({
-        "docker_path": docker_path
-    });
-    
+    let mut config = if config_path.exists() {
+        let content = fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read configuration: {}", e))?;
+        serde_json::from_str::<serde_json::Value>(&content)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(key, serde_json::Value::String(value));
+    }
     fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
         .map_err(|e| format!("Failed to save configuration: {}", e))?;
-    
     Ok(())
 }
 
 #[tauri::command]
-pub fn load_docker_path() -> Result<String, String> {
+pub fn load_config(key: String) -> Result<String, String> {
     let config_path = get_config_path();
-    
     if !config_path.exists() {
         return Ok(String::new());
     }
-    
     let content = fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read configuration: {}", e))?;
-    
     let config: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse configuration: {}", e))?;
-    
-    Ok(config["docker_path"].as_str().unwrap_or("").to_string())
+    Ok(config.get(&key).and_then(|v| v.as_str()).unwrap_or("").to_string())
 }
-
 
 #[tauri::command]
 pub async fn run_docker_test(

@@ -23,11 +23,11 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const settingsDrawerRef = useRef<HTMLDivElement>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
-  const [defaultLanguage, setDefaultLanguage] = useState<string>(() => {
-    const saved = localStorage.getItem('defaultLanguage');
-    return saved || "Javascript";
-  });
-  const [tabLanguages, setTabLanguages] = useState<{ [tabId: string]: string }>({ "1": defaultLanguage });
+  const [defaultLanguage, setDefaultLanguage] = useState<string>("Javascript");
+  const [tabLanguages, setTabLanguages] = useState<{ [tabId: string]: string }>({ "1": "Javascript" });
+  const [dockerPathLoaded, setDockerPathLoaded] = useState(false);
+  const [defaultLanguageLoaded, setDefaultLanguageLoaded] = useState(false);
+  const [themeLoaded, setThemeLoaded] = useState(false);
 
   function getSystemTheme() {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -36,32 +36,94 @@ function App() {
     return 'light';
   }
 
-  const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark' || saved === 'system') {
-      // Apply theme immediately on initialization
-      let applied = saved;
-      if (saved === 'system') {
-        applied = getSystemTheme();
-      }
-      if (applied === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-      return saved;
-    }
-    // Default to system theme and apply it immediately
-    const systemTheme = getSystemTheme();
-    if (systemTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    return 'system';
-  });
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>("system");
 
+  // Load all config values on mount
   useEffect(() => {
+    const loadAllConfig = async () => {
+      try {
+        const savedDockerPath = await invoke<string>("load_config", { key: "docker_path" });
+        setDockerPath(savedDockerPath);
+        setDockerPathLoaded(true);
+      } catch (error) {
+        console.error("Failed to load Docker path:", error);
+        setDockerPathLoaded(true);
+      }
+      try {
+        const savedLanguage = await invoke<string>("load_config", { key: "default_language" });
+        setDefaultLanguage(savedLanguage || "Javascript");
+        setTabLanguages({ "1": savedLanguage || "Javascript" });
+        setDefaultLanguageLoaded(true);
+      } catch (error) {
+        console.error("Failed to load default language:", error);
+        setDefaultLanguageLoaded(true);
+      }
+      try {
+        const savedTheme = await invoke<string>("load_config", { key: "theme" });
+        if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+          setTheme(savedTheme);
+          let applied = savedTheme;
+          if (savedTheme === 'system') {
+            applied = getSystemTheme();
+          }
+          if (applied === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } else {
+          // Default to system theme
+          setTheme('system');
+          const systemTheme = getSystemTheme();
+          if (systemTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        }
+        setThemeLoaded(true);
+      } catch (error) {
+        console.error("Failed to load theme:", error);
+        setThemeLoaded(true);
+      }
+    };
+    loadAllConfig();
+    // eslint-disable-next-line
+  }, []);
+
+  // Save Docker path when it changes, but only after loaded
+  useEffect(() => {
+    if (!dockerPathLoaded) return;
+    const saveDockerPath = async () => {
+      try {
+        if (dockerPath !== undefined) {
+          await invoke("save_config", { key: "docker_path", value: dockerPath.trim() });
+        }
+      } catch (error) {
+        console.error("Failed to save Docker path:", error);
+      }
+    };
+    saveDockerPath();
+  }, [dockerPath, dockerPathLoaded]);
+
+  // Save default language when it changes, but only after loaded
+  useEffect(() => {
+    if (!defaultLanguageLoaded) return;
+    const saveDefaultLanguage = async () => {
+      try {
+        if (defaultLanguage !== undefined) {
+          await invoke("save_config", { key: "default_language", value: defaultLanguage });
+        }
+      } catch (error) {
+        console.error("Failed to save default language:", error);
+      }
+    };
+    saveDefaultLanguage();
+  }, [defaultLanguage, defaultLanguageLoaded]);
+
+  // Save theme when it changes, but only after loaded
+  useEffect(() => {
+    if (!themeLoaded) return;
     let applied = theme;
     if (theme === 'system') {
       applied = getSystemTheme();
@@ -71,8 +133,6 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    localStorage.setItem('theme', theme);
-
     // Listen for system theme changes
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
@@ -85,45 +145,18 @@ function App() {
         }
       }
     };
-
     mediaQuery.addEventListener('change', handleChange);
+    // Save theme to backend
+    const saveTheme = async () => {
+      try {
+        await invoke("save_config", { key: "theme", value: theme });
+      } catch (error) {
+        console.error("Failed to save theme:", error);
+      }
+    };
+    saveTheme();
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
-
-  // Save default language to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem('defaultLanguage', defaultLanguage);
-  }, [defaultLanguage]);
-
-  // Load Docker path configuration on app start
-  useEffect(() => {
-    const loadDockerPath = async () => {
-      try {
-        const savedPath = await invoke<string>("load_docker_path");
-        setDockerPath(savedPath);
-      } catch (error) {
-        console.error("Failed to load Docker path:", error);
-      }
-    };
-
-    loadDockerPath();
-  }, []);
-
-  // Save Docker path when it changes
-  useEffect(() => {
-    const saveDockerPath = async () => {
-      try {
-        // Only save if dockerPath is not undefined (avoid saving on initial load)
-        if (dockerPath !== undefined) {
-          await invoke("save_docker_path", { dockerPath: dockerPath.trim() });
-        }
-      } catch (error) {
-        console.error("Failed to save Docker path:", error);
-      }
-    };
-
-    saveDockerPath();
-  }, [dockerPath]);
+  }, [theme, themeLoaded]);
 
   // Update tab data
   const updateTabData = (tabId: string, updates: Partial<TabsState>) => {
