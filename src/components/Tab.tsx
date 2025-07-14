@@ -156,18 +156,24 @@ function tabReducer(state: TabState, action: TabAction): TabState {
 
 // SWEBenchTab component - represents a single tab
 export function SWEBenchTab({
+  tabId,
   onTabNameChange,
   dockerPath,
   visible,
   language,
   setLanguage,
+  scrollPosition,
+  scrollableRef,
 }: {
+  tabId: string;
   onTabNameChange: (name: string) => void;
   dockerPath: string;
   setDockerPath: (path: string) => void;
   visible: boolean;
   language: string;
   setLanguage: (lang: string) => void;
+  scrollPosition: number;
+  scrollableRef: (el: HTMLDivElement | null) => void;
 }) {
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const testLogsContainerRef = useRef<HTMLDivElement>(null);
@@ -357,6 +363,7 @@ export function SWEBenchTab({
           inputJson: state.jsonSpec,
           githubRepoUrl: state.githubRepoUrl.trim(),
           commit: commitToUse.trim(),
+          language: language,
         });
 
         if (result.success && result.dockerfile) {
@@ -398,6 +405,7 @@ export function SWEBenchTab({
     state.baseCommit,
     state.headCommit,
     state.useHeadCommit,
+    language,
   ]);
 
   // Auto-scroll to bottom when new logs arrive
@@ -454,22 +462,26 @@ export function SWEBenchTab({
 
   // Listen for build logs
   useEffect(() => {
-    const unlisten = listen<string>("build_log", (event) => {
-      dispatch({ type: "ADD_BUILD_LOG", payload: event.payload });
+    const unlisten = listen<any>("build_log", (event) => {
+      if (event.payload && event.payload.tab_id === tabId) {
+        dispatch({ type: "ADD_BUILD_LOG", payload: event.payload.message });
+      }
     });
 
-    const unlistenBuildComplete = listen<{ success: boolean; error?: string }>(
+    const unlistenBuildComplete = listen<any>(
       "build_complete",
       (event) => {
-        dispatch({ type: "SET_IS_BUILDING", payload: false });
-        if (!event.payload.success && event.payload.error) {
-          dispatch({
-            type: "ADD_BUILD_LOG",
-            payload: `ERROR: ${event.payload.error}`,
-          });
-        } else if (event.payload.success) {
-          // Recheck if the image exists after successful build to enable test button
-          checkImageExists(state.imageName);
+        if (event.payload && event.payload.tab_id === tabId) {
+          dispatch({ type: "SET_IS_BUILDING", payload: false });
+          if (!event.payload.success && event.payload.error) {
+            dispatch({
+              type: "ADD_BUILD_LOG",
+              payload: `ERROR: ${event.payload.error}`,
+            });
+          } else if (event.payload.success) {
+            // Recheck if the image exists after successful build to enable test button
+            checkImageExists(state.imageName);
+          }
         }
       }
     );
@@ -478,23 +490,27 @@ export function SWEBenchTab({
       unlisten.then((f) => f());
       unlistenBuildComplete.then((f) => f());
     };
-  }, [state.imageName]);
+  }, [state.imageName, tabId]);
 
   // Listen for test logs
   useEffect(() => {
-    const unlistenTestLog = listen<string>("test_log", (event) => {
-      dispatch({ type: "ADD_TEST_LOG", payload: event.payload });
+    const unlistenTestLog = listen<any>("test_log", (event) => {
+      if (event.payload && event.payload.tab_id === tabId) {
+        dispatch({ type: "ADD_TEST_LOG", payload: event.payload.message });
+      }
     });
 
-    const unlistenTestComplete = listen<{ success: boolean; error?: string }>(
+    const unlistenTestComplete = listen<any>(
       "test_complete",
       (event) => {
-        dispatch({ type: "SET_IS_TESTING", payload: false });
-        if (!event.payload.success && event.payload.error) {
-          dispatch({
-            type: "ADD_TEST_LOG",
-            payload: `ERROR: ${event.payload.error}`,
-          });
+        if (event.payload && event.payload.tab_id === tabId) {
+          dispatch({ type: "SET_IS_TESTING", payload: false });
+          if (!event.payload.success && event.payload.error) {
+            dispatch({
+              type: "ADD_TEST_LOG",
+              payload: `ERROR: ${event.payload.error}`,
+            });
+          }
         }
       }
     );
@@ -503,7 +519,7 @@ export function SWEBenchTab({
       unlistenTestLog.then((f) => f());
       unlistenTestComplete.then((f) => f());
     };
-  }, []);
+  }, [tabId]);
 
   const handleBuild = async () => {
     if (
@@ -530,6 +546,7 @@ export function SWEBenchTab({
 
     try {
       await invoke("build_docker_image", {
+        tabId,
         dockerfileContent: state.generatedDockerfile,
         imageName: state.imageName.trim(),
         githubRepoUrl: state.githubRepoUrl.trim(),
@@ -545,7 +562,7 @@ export function SWEBenchTab({
 
   const handleStopBuild = async () => {
     try {
-      await invoke("stop_docker_build");
+      await invoke("stop_docker_build", { tabId });
       dispatch({ type: "SET_IS_BUILDING", payload: false });
     } catch (error) {
       logError("Failed to stop build:", error);
@@ -581,6 +598,7 @@ export function SWEBenchTab({
 
     try {
       await invoke("run_docker_test", {
+        tabId,
         imageName: state.imageName.trim(),
         testCmd: testCmd.trim(),
         testFilePaths: state.testFiles.trim(),
@@ -595,7 +613,7 @@ export function SWEBenchTab({
 
   const handleStopTest = async () => {
     try {
-      await invoke("stop_docker_test");
+      await invoke("stop_docker_test", { tabId });
       dispatch({ type: "SET_IS_TESTING", payload: false });
     } catch (error) {
       logError("Failed to stop test:", error);
@@ -636,87 +654,101 @@ export function SWEBenchTab({
     }
   };
 
-  if (!visible) return null;
+  // Restore scroll position when tab becomes visible
+  useEffect(() => {
+    if (visible && typeof window !== 'undefined') {
+      // Wait for next tick to ensure DOM is ready
+      setTimeout(() => {
+        const el = document.getElementById(`tab-scrollable-${tabId}`) as HTMLDivElement | null;
+        if (el) {
+          el.scrollTop = scrollPosition || 0;
+        }
+      }, 0);
+    }
+  }, [visible, scrollPosition, tabId]);
 
   return (
-    <div
-      className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6"
-      // hidden={!visible}
-    >
-      <div className="max-w-6xl mx-auto space-y-6 pb-16">
-        <RepositoryForm
-          githubRepoUrl={state.githubRepoUrl}
-          setGithubRepoUrl={(url) =>
-            dispatch({ type: "SET_GITHUB_REPO_URL", payload: url })
-          }
-          baseCommit={state.baseCommit}
-          setBaseCommit={(commit) =>
-            dispatch({ type: "SET_BASE_COMMIT", payload: commit })
-          }
-          headCommit={state.headCommit}
-          setHeadCommit={(commit) =>
-            dispatch({ type: "SET_HEAD_COMMIT", payload: commit })
-          }
-          jsonSpec={state.jsonSpec}
-          setJsonSpec={(spec) =>
-            dispatch({ type: "SET_JSON_SPEC", payload: spec })
-          }
-          isDockerfileExpanded={state.isDockerfileExpanded}
-          setIsDockerfileExpanded={(expanded) =>
-            dispatch({ type: "SET_DOCKERFILE_EXPANDED", payload: expanded })
-          }
-          generatedDockerfile={state.generatedDockerfile}
-          validationError={state.validationError}
-          isValidJson={state.isValidJson}
-          useHeadCommit={state.useHeadCommit}
-          setUseHeadCommit={(useHead) =>
-            dispatch({ type: "SET_USE_HEAD_COMMIT", payload: useHead })
-          }
-          language={language}
-          setLanguage={setLanguage}
-        />
+    <div className={`w-full h-full flex flex-col${!visible ? ' hidden' : ''}`}>
+      <div
+        ref={scrollableRef}
+        id={`tab-scrollable-${tabId}`}
+        className="flex-1 w-full h-full overflow-y-auto"
+      >
+        <div className="max-w-6xl mx-auto space-y-6 pb-16 p-6">
+          <RepositoryForm
+            githubRepoUrl={state.githubRepoUrl}
+            setGithubRepoUrl={(url) =>
+              dispatch({ type: "SET_GITHUB_REPO_URL", payload: url })
+            }
+            baseCommit={state.baseCommit}
+            setBaseCommit={(commit) =>
+              dispatch({ type: "SET_BASE_COMMIT", payload: commit })
+            }
+            headCommit={state.headCommit}
+            setHeadCommit={(commit) =>
+              dispatch({ type: "SET_HEAD_COMMIT", payload: commit })
+            }
+            jsonSpec={state.jsonSpec}
+            setJsonSpec={(spec) =>
+              dispatch({ type: "SET_JSON_SPEC", payload: spec })
+            }
+            isDockerfileExpanded={state.isDockerfileExpanded}
+            setIsDockerfileExpanded={(expanded) =>
+              dispatch({ type: "SET_DOCKERFILE_EXPANDED", payload: expanded })
+            }
+            generatedDockerfile={state.generatedDockerfile}
+            validationError={state.validationError}
+            isValidJson={state.isValidJson}
+            useHeadCommit={state.useHeadCommit}
+            setUseHeadCommit={(useHead) =>
+              dispatch({ type: "SET_USE_HEAD_COMMIT", payload: useHead })
+            }
+            language={language}
+            setLanguage={setLanguage}
+          />
 
-        <BuildSection
-          imageName={state.imageName}
-          setImageName={(name) =>
-            dispatch({ type: "SET_IMAGE_NAME", payload: name })
-          }
-          isBuilding={state.isBuilding}
-          buildLogs={state.buildLogs}
-          shouldAutoScroll={state.shouldAutoScroll}
-          setShouldAutoScroll={(scroll) =>
-            dispatch({ type: "SET_SHOULD_AUTO_SCROLL", payload: scroll })
-          }
-          handleBuild={handleBuild}
-          handleStopBuild={handleStopBuild}
-          isValidImageName={state.isValidImageName}
-          generatedDockerfile={state.generatedDockerfile}
-          isValidJson={state.isValidJson}
-          validationError={state.validationError}
-          logsContainerRef={logsContainerRef}
-          buildLogsSectionRef={buildLogsSectionRef}
-          handleScroll={handleScroll}
-        />
+          <BuildSection
+            imageName={state.imageName}
+            setImageName={(name) =>
+              dispatch({ type: "SET_IMAGE_NAME", payload: name })
+            }
+            isBuilding={state.isBuilding}
+            buildLogs={state.buildLogs}
+            shouldAutoScroll={state.shouldAutoScroll}
+            setShouldAutoScroll={(scroll) =>
+              dispatch({ type: "SET_SHOULD_AUTO_SCROLL", payload: scroll })
+            }
+            handleBuild={handleBuild}
+            handleStopBuild={handleStopBuild}
+            isValidImageName={state.isValidImageName}
+            generatedDockerfile={state.generatedDockerfile}
+            isValidJson={state.isValidJson}
+            validationError={state.validationError}
+            logsContainerRef={logsContainerRef}
+            buildLogsSectionRef={buildLogsSectionRef}
+            handleScroll={handleScroll}
+          />
 
-        <TestSection
-          testFiles={state.testFiles}
-          setTestFiles={(files) =>
-            dispatch({ type: "SET_TEST_FILES", payload: files })
-          }
-          isTesting={state.isTesting}
-          testLogs={state.testLogs}
-          shouldAutoScrollTest={state.shouldAutoScrollTest}
-          setShouldAutoScrollTest={(scroll) =>
-            dispatch({ type: "SET_SHOULD_AUTO_SCROLL_TEST", payload: scroll })
-          }
-          handleTest={handleTest}
-          handleStopTest={handleStopTest}
-          isImageExists={state.isImageExists}
-          isCheckingImage={state.isCheckingImage}
-          testLogsContainerRef={testLogsContainerRef}
-          testLogsSectionRef={testLogsSectionRef}
-          handleTestScroll={handleTestScroll}
-        />
+          <TestSection
+            testFiles={state.testFiles}
+            setTestFiles={(files) =>
+              dispatch({ type: "SET_TEST_FILES", payload: files })
+            }
+            isTesting={state.isTesting}
+            testLogs={state.testLogs}
+            shouldAutoScrollTest={state.shouldAutoScrollTest}
+            setShouldAutoScrollTest={(scroll) =>
+              dispatch({ type: "SET_SHOULD_AUTO_SCROLL_TEST", payload: scroll })
+            }
+            handleTest={handleTest}
+            handleStopTest={handleStopTest}
+            isImageExists={state.isImageExists}
+            isCheckingImage={state.isCheckingImage}
+            testLogsContainerRef={testLogsContainerRef}
+            testLogsSectionRef={testLogsSectionRef}
+            handleTestScroll={handleTestScroll}
+          />
+        </div>
       </div>
     </div>
   );

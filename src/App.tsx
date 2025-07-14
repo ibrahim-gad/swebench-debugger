@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { SWEBenchTab } from "./components/Tab";
@@ -19,7 +19,6 @@ function App() {
   ]);
   const [activeTabId, setActiveTabId] = useState("1");
   const [dockerPath, setDockerPath] = useState("");
-  const [isDockerPathExpanded, setIsDockerPathExpanded] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const settingsDrawerRef = useRef<HTMLDivElement>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -28,6 +27,8 @@ function App() {
   const [dockerPathLoaded, setDockerPathLoaded] = useState(false);
   const [defaultLanguageLoaded, setDefaultLanguageLoaded] = useState(false);
   const [themeLoaded, setThemeLoaded] = useState(false);
+  const [scrollPositions, setScrollPositions] = useState<{ [tabId: string]: number }>({});
+  const scrollableRefs = useRef<{ [tabId: string]: HTMLDivElement | null }>({});
 
   function getSystemTheme() {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -208,10 +209,41 @@ function App() {
     }
   };
 
+  // Handler to update scroll position for a tab
+  const handleUpdateScrollPosition = useCallback((tabId: string, pos: number) => {
+    setScrollPositions((prev) => ({ ...prev, [tabId]: pos }));
+  }, []);
+
+  // Handler to get scroll position for a tab
+  const getScrollPosition = useCallback((tabId: string) => {
+    return scrollPositions[tabId] || 0;
+  }, [scrollPositions]);
+
+  // Save scroll position before switching tabs
+  const handleTabClick = (tabId: string) => {
+    if (tabId !== activeTabId) {
+      const currentRef = scrollableRefs.current[activeTabId];
+      if (currentRef) {
+        handleUpdateScrollPosition(activeTabId, currentRef.scrollTop);
+      }
+      setActiveTabId(tabId);
+    }
+  };
+
+  // Pass a ref to each tab's scrollable container
+  const getOrCreateScrollableRef = (tabId: string) => {
+    if (!scrollableRefs.current[tabId]) {
+      scrollableRefs.current[tabId] = null;
+    }
+    return (el: HTMLDivElement | null) => {
+      scrollableRefs.current[tabId] = el;
+    };
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
       {/* App Bar/Header */}
-      <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm flex items-center h-14 px-4 gap-2">
+      <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm flex items-center h-14 px-4 gap-2 shrink-0">
         {/* App Name/Logo */}
         <div className="flex items-center font-bold text-lg text-blue-700 dark:text-blue-300 mr-6 select-none whitespace-nowrap">
           <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" strokeWidth="2" /><path d="M8 12l2 2 4-4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -234,7 +266,7 @@ function App() {
                       ? " bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-b-blue-500 dark:border-b-blue-400 font-semibold shadow"
                       : " bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600")
                 }
-                onClick={() => setActiveTabId(tab.id)}
+                onClick={() => handleTabClick(tab.id)}
                 style={{ minWidth: 100, maxWidth: 200 }}
               >
                 <span className="text-sm font-medium truncate max-w-32">
@@ -379,19 +411,24 @@ function App() {
       )}
 
       {/* Tab Content */}
-      {tabs.map((tab) => (
-        <SWEBenchTab
-          key={tab.id}
-          visible={activeTabId === tab.id}
-          onTabNameChange={(name) =>
-            updateTabData(activeTabId, { title: name })
-          }
-          dockerPath={dockerPath}
-          setDockerPath={setDockerPath}
-          language={tabLanguages[tab.id] || defaultLanguage}
-          setLanguage={(lang) => setTabLanguages((prev) => ({ ...prev, [tab.id]: lang }))}
-        />
-      ))}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {tabs.map((tab) => (
+          <SWEBenchTab
+            key={tab.id}
+            tabId={tab.id}
+            visible={activeTabId === tab.id}
+            onTabNameChange={(name) =>
+              updateTabData(activeTabId, { title: name })
+            }
+            dockerPath={dockerPath}
+            setDockerPath={setDockerPath}
+            language={tabLanguages[tab.id] || defaultLanguage}
+            setLanguage={(lang) => setTabLanguages((prev) => ({ ...prev, [tab.id]: lang }))}
+            scrollPosition={getScrollPosition(tab.id)}
+            scrollableRef={getOrCreateScrollableRef(tab.id)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
