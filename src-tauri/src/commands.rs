@@ -68,7 +68,7 @@ fn get_json_schema(language: &str) -> Value {
                 },
                 "log_parser_name": {
                     "type": "string",
-                    "enum": ["cargo"],
+                    "enum": ["cargo", "agentic"],
                     "description": "A log parser is used to parse the textual result of the tests and determine how many succeeded, how many failed..."
                 },
                 "pre_install": {
@@ -110,7 +110,7 @@ fn get_json_schema(language: &str) -> Value {
                 },
                 "log_parser_name": {
                     "type": "string",
-                    "enum": ["doctest", "googletest"],
+                    "enum": ["doctest", "googletest", "agentic"],
                     "description": "A log parser is used to parse the textual result of the tests and determine how many succeeded, how many failed..."
                 },
                 "pre_install": {
@@ -152,7 +152,7 @@ fn get_json_schema(language: &str) -> Value {
                 },
                 "log_parser_name": {
                     "type": "string",
-                    "enum": ["jest", "mocha", "vitest", "karma", "tap", "calypso", "chartjs", "marked", "p5js", "reactpdf"],
+                    "enum": ["jest", "mocha", "vitest", "karma", "tap", "calypso", "chartjs", "marked", "p5js", "agentic"],
                     "description": "A log parser is used to parse the textual result of the tests and determine how many succeeded, how many failed..."
                 },
                 "pre_install": {
