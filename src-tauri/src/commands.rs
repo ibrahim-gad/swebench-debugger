@@ -293,7 +293,7 @@ fn generate_js_dockerfile(
         .map(|s| s.as_str())
         .unwrap_or("9.5.0");
 
-    format!("FROM --platform={} ubuntu:{}
+    format!("FROM ubuntu:{}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -389,7 +389,6 @@ RUN /bin/bash /root/setup_repo.sh
 
 WORKDIR /testbed/
 ",
-        platform,
         ubuntu_version,
         node_version,
         node_version,
