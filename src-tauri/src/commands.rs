@@ -16,7 +16,6 @@ use std::collections::HashMap;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DockerSpecs {
     pub ubuntu_version: Option<String>,
-    pub platform: Option<String>,
     pub node_version: Option<String>,
     pub pnpm_version: Option<String>,
     pub rust_version: Option<String>,
@@ -177,10 +176,6 @@ fn get_json_schema(language: &str) -> Value {
                             "type": "string",
                             "description": "Ubuntu version for the Docker image"
                         },
-                        "platform": {
-                            "type": "string",
-                            "description": "Platform specification for the Docker image"
-                        },
                         "node_version": {
                             "type": "string",
                             "description": "Node.js version to install"
@@ -278,11 +273,6 @@ fn generate_js_dockerfile(
         .map(|s| s.as_str())
         .unwrap_or("22.04");
     
-    let platform = config.docker_specs.as_ref()
-        .and_then(|specs| specs.platform.as_ref())
-        .map(|s| s.as_str())
-        .unwrap_or("linux/x86_64");
-    
     let node_version = config.docker_specs.as_ref()
         .and_then(|specs| specs.node_version.as_ref())
         .map(|s| s.as_str())
@@ -293,7 +283,7 @@ fn generate_js_dockerfile(
         .map(|s| s.as_str())
         .unwrap_or("9.5.0");
 
-    format!("FROM ubuntu:{}
+    format!("FROM --platform=linux/amd64 ubuntu:{}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
@@ -704,7 +694,7 @@ pub async fn build_docker_image(
 
 #[tauri::command]
 pub async fn stop_docker_build(tab_id: String) -> Result<(), String> {
-    let mut child = {
+    let child = {
         let mut processes = DOCKER_PROCESSES.lock().unwrap();
         processes.remove(&tab_id)
     };
