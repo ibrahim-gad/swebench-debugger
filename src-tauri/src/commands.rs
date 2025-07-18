@@ -283,7 +283,7 @@ fn generate_js_dockerfile(
         .map(|s| s.as_str())
         .unwrap_or("9.5.0");
 
-    format!("FROM --platform=linux/amd64 ubuntu:{}
+    format!("FROM ubuntu:{}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
