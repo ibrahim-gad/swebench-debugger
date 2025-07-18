@@ -64,6 +64,15 @@ This command will:
 - Compile the Rust backend
 - Create platform-specific bundles
 
+#### Troubleshooting Build Issues on macOS
+
+If bundling failed with error message `error running bundle_dmg.sh`, ensure that terminal app you are using has permissions to control `Finder.app`:
+
+1. Go to `System-Settings` &rarr; `Privacy & Security` &rarr; `Automation`
+2. Select your terminal app and below enable the switch for `Finder`.
+
+This step is necessary for Tauri to be able to mount created DMG and open Finder window. You can also ignore this error and use the `.app` file directly (see below).
+
 ## Finding Your Built Application
 
 After running `pnpm tauri build`, you can find the built application in the following locations:
