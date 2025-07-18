@@ -251,7 +251,7 @@ fn generate_dockerfile(config: &TestConfig, github_repo_url: &str, commit: &str,
     let pre_install_cmds = format_commands(&config.pre_install);
     let install_cmds = format_commands(&config.install);
     let build_cmds = format_commands(&config.build);
-    
+
     match language {
         "C/CPP" => generate_cpp_dockerfile(config, github_repo_url, commit, &pre_install_cmds, &install_cmds, &build_cmds),
         "Rust" => generate_rust_dockerfile(config, github_repo_url, commit, &pre_install_cmds, &install_cmds, &build_cmds),
@@ -260,8 +260,8 @@ fn generate_dockerfile(config: &TestConfig, github_repo_url: &str, commit: &str,
 }
 
 fn generate_js_dockerfile(
-    config: &TestConfig, 
-    github_repo_url: &str, 
+    config: &TestConfig,
+    github_repo_url: &str,
     commit: &str,
     pre_install_cmds: &str,
     install_cmds: &str,
@@ -272,12 +272,12 @@ fn generate_js_dockerfile(
         .and_then(|specs| specs.ubuntu_version.as_ref())
         .map(|s| s.as_str())
         .unwrap_or("22.04");
-    
+
     let node_version = config.docker_specs.as_ref()
         .and_then(|specs| specs.node_version.as_ref())
         .map(|s| s.as_str())
         .unwrap_or("20");
-    
+
     let pnpm_version = config.docker_specs.as_ref()
         .and_then(|specs| specs.pnpm_version.as_ref())
         .map(|s| s.as_str())
@@ -306,7 +306,7 @@ RUN apt-get update && apt-get install -y \\
     libjpeg-dev \\
     libgif-dev \\
     librsvg2-dev \\
-    pkg-config 
+    pkg-config
 
 # Install node
 RUN bash -c \"set -eo pipefail && curl -fsSL https://deb.nodesource.com/setup_{}.x | bash -\"
@@ -393,8 +393,8 @@ WORKDIR /testbed/
 }
 
 fn generate_cpp_dockerfile(
-    config: &TestConfig, 
-    github_repo_url: &str, 
+    config: &TestConfig,
+    github_repo_url: &str,
     commit: &str,
     pre_install_cmds: &str,
     install_cmds: &str,
@@ -443,8 +443,8 @@ WORKDIR /testbed/
 }
 
 fn generate_rust_dockerfile(
-    config: &TestConfig, 
-    github_repo_url: &str, 
+    config: &TestConfig,
+    github_repo_url: &str,
     commit: &str,
     pre_install_cmds: &str,
     install_cmds: &str,
@@ -518,7 +518,7 @@ async fn check_docker_available(docker_path: Option<&str>) -> Result<String, Str
             // If path is empty or whitespace, fall back to PATH
             match which::which("docker") {
                 Ok(path) => path.to_string_lossy().to_string(),
-                Err(_) => return Err("Docker is not installed or not found in PATH".to_string()),
+                Err(_) => return Err(format!("Docker is not installed or not found in PATH: {}", std::env::var("PATH").unwrap()).to_string()),
             }
         } else if !std::path::Path::new(trimmed_path).exists() {
             return Err(format!("Docker executable not found at: {}", trimmed_path));
@@ -529,7 +529,7 @@ async fn check_docker_available(docker_path: Option<&str>) -> Result<String, Str
         // Check if docker command exists in PATH
         match which::which("docker") {
             Ok(path) => path.to_string_lossy().to_string(),
-            Err(_) => return Err("Docker is not installed or not found in PATH".to_string()),
+            Err(_) => return Err(format!("Docker is not installed or not found in PATH: {}", std::env::var("PATH").unwrap()).to_string()),
         }
     };
 
@@ -727,7 +727,7 @@ pub async fn check_docker_image_exists(image_name: String, docker_path: String) 
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    
+
     // Parse the provided image name (handle cases with and without tags)
     let (target_repo, target_tag) = if image_name.contains(':') {
         let parts: Vec<&str> = image_name.splitn(2, ':').collect();
@@ -735,14 +735,14 @@ pub async fn check_docker_image_exists(image_name: String, docker_path: String) 
     } else {
         (image_name.as_str(), "latest")
     };
-    
+
     // Check if any of the existing images match
     let image_exists = output_str.lines().any(|line| {
         let line = line.trim();
         if line.is_empty() {
             return false;
         }
-        
+
         // Parse each line (format: repository:tag)
         if let Some((repo, tag)) = line.split_once(':') {
             repo == target_repo && tag == target_tag
@@ -759,12 +759,12 @@ pub async fn check_docker_image_exists(image_name: String, docker_path: String) 
 fn get_config_path() -> PathBuf {
     let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.push(".swebench-debugger");
-    
+
     // Create directory if it doesn't exist
     if !home.exists() {
         let _ = fs::create_dir_all(&home);
     }
-    
+
     home.join("config.json")
 }
 
